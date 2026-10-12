@@ -1,0 +1,1 @@
+{ "name": "roadmap-alertas", "version": "1.0.0", "private": true, "description": "Roadmap de Cursos: site + API de alertas (e-mail e WhatsApp)", "engines": { "node": ">=20" } }

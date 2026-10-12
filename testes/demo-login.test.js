@@ -1,0 +1,37 @@
+const { JSDOM } = require("jsdom"), fs = require("fs"), nodeCrypto = require("crypto"), XLSX = require("xlsx");
+const html = fs.readFileSync("../index.html", "utf8"); const errs = [];
+const dom = new JSDOM(html, { runScripts: "dangerously", pretendToBeVisual: true, url: "https://x.test/",
+  beforeParse(w) { w.addEventListener("error", e => errs.push(e.message)); w.confirm = () => true; Object.defineProperty(w, "crypto", { value: nodeCrypto.webcrypto }); w.TextEncoder = TextEncoder; w.TextDecoder = TextDecoder; w.XLSX = XLSX;
+    w.matchMedia = () => ({ matches: false }); w.scrollTo = () => {}; w.fetch = async () => { throw new Error("off"); }; } });
+const w = dom.window, d = w.document, wait = ms => new Promise(r => setTimeout(r, ms)), ev = c => w.eval(c);
+const txt = () => d.getElementById("app").textContent.replace(/\s+/g, " ");
+const ok = (n, c, x = "") => console.log(c ? "✓" : "✗ FALHOU", n, x);
+const submit = (sel, vals) => { const f = d.querySelector(sel); for (const [k, v] of Object.entries(vals)) { const el = f.querySelector(`[name="${k}"]`); if (el) el.value = v; } f.dispatchEvent(new w.Event("submit", { bubbles: true, cancelable: true })); };
+(async () => {
+  await wait(4300);
+  ok("tela de criação tem o botão de demonstração", !!d.querySelector('[data-act="demo"]'));
+  const lsB = JSON.stringify(Object.keys(w.localStorage).filter(k => k !== "roadmap-prefs").sort());
+  d.querySelector('[data-act="demo"]').click(); await wait(300);
+  ok("entra sem senha, no Dashboard", ev("auth") === "app" && ev("DEMO") === true && /Olá, Visitante/.test(txt()));
+  ok("faixa de aviso", !!d.querySelector(".demobar") && /nada é salvo/.test(d.querySelector(".demobar").textContent));
+  ok("dados de exemplo presentes", ev("S.items.length") >= 5 && /MBA/.test(txt()));
+  ev("S.items[0].name='Alterado'"); ev("persist()"); await wait(900); ev("queueAlertSync()");
+  ok("nada gravado no navegador", JSON.stringify(Object.keys(w.localStorage).filter(k => k !== "roadmap-prefs").sort()) === lsB, Object.keys(w.localStorage).join(","));
+  ok("sem chave na sessão", !w.sessionStorage.getItem("rk"));
+  d.querySelector('[data-act="syncopen"]').click(); await wait(100); ok("sincronização bloqueada", !d.querySelector("#modal .modal"));
+  d.querySelector('[data-act="account"]').click(); await wait(100); ok("Minha conta bloqueada", !d.getElementById("acctForm"));
+  d.querySelector('[data-nav="planner"]').click(); await wait(50); d.querySelector('[data-nav="roadmap"]').click(); await wait(50); ok("navega pelas telas", !!d.querySelector(".grow-r"));
+  d.querySelector('.demobar [data-act="logout"]').click(); await wait(300);
+  ok("sair volta ao acesso, demo desligada", ev("DEMO") === false && ev("auth") === "setup" && /Você saiu do modo demonstração/.test(txt()));
+  submit("#authForm", { name: "Lucia Dias", login: "lucia", pw: "senha-forte-1", pw2: "senha-forte-1" }); await wait(2500);
+  ev("S.items[0].name='Real'"); await ev("writeRec()"); ok("conta real grava normalmente", ev("DEMO") === false && ev("auth") === "app");
+  d.querySelector('[data-act="logout"]').click(); await wait(500);
+  const snap = JSON.stringify(Object.entries(w.localStorage).filter(([k]) => /rec/i.test(k)));
+  ok("login mostra botão de demo", ev("auth") === "login" && !!d.querySelector('[data-act="demo"]'));
+  d.querySelector('[data-act="demo"]').click(); await wait(300); ev("S.items[0].name='Mexi'"); ev("persist()"); await wait(900);
+  ok("demo com conta real: não sobrescreve", JSON.stringify(Object.entries(w.localStorage).filter(([k]) => /rec/i.test(k))) === snap);
+  d.querySelector('.demobar [data-act="logout"]').click(); await wait(300);
+  submit("#authForm", { login: "lucia", pw: "senha-forte-1" }); await wait(2500);
+  ok("login real intacto com os dados reais", ev("auth") === "app" && ev("S.items[0].name") === "Real", ev("S.items[0].name"));
+  console.log(errs.length ? "ERROS: " + errs.join(" | ") : "sem erros de página"); process.exit(0);
+})();
